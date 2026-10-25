@@ -1,91 +1,140 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useMemo } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Palette, entryDate, pad, showDate, useBudget } from "../../lib/budget";
+import EntryRow from "../../lib/EntryRow";
+import { Palette, entryDate, toDateStr, useBudget } from "../../lib/budget";
 
 export default function Home() {
-  const { entries, sorted, totals, money, colors: C } = useBudget();
+  const { sorted, totals, money, tagMap, colors: C } = useBudget();
   const s = useMemo(() => makeStyles(C), [C]);
   const router = useRouter();
 
   const now = new Date();
-  const monthKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
-  const monthEntries = entries.filter((e) => entryDate(e).startsWith(monthKey));
-  const monthIn = monthEntries
-    .filter((e) => e.type === "income")
-    .reduce((sum, e) => sum + e.amount, 0);
-  const monthOut = monthEntries
-    .filter((e) => e.type === "expense")
-    .reduce((sum, e) => sum + e.amount, 0);
   const monthName = now.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const dateLine = now.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+
+  // This month's totals in a single pass
+  const month = useMemo(() => {
+    const key = toDateStr(new Date()).slice(0, 7);
+    let income = 0;
+    let expense = 0;
+    for (const e of sorted) {
+      if (!entryDate(e).startsWith(key)) continue;
+      if (e.type === "income") income += e.amount;
+      else expense += e.amount;
+    }
+    return { income, expense };
+  }, [sorted]);
+
+  const recent = useMemo(() => sorted.slice(0, 5), [sorted]);
+
+  const spentShare =
+    month.income > 0 ? Math.min(month.expense / month.income, 1) : month.expense > 0 ? 1 : 0;
+  const pct = Math.round(spentShare * 100);
+  const saved = month.income - month.expense;
 
   return (
     <SafeAreaView style={s.screen} edges={["top", "left", "right"]}>
       <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
-        <Text style={s.label}>Balance</Text>
-        <Text style={[s.balance, totals.balance < 0 && { color: C.expense }]}>
-          {money(totals.balance)}
-        </Text>
-        <View style={s.statsRow}>
-          <View style={s.stat}>
-            <Text style={s.label}>Money in</Text>
-            <Text style={[s.statValue, { color: C.income }]}>{money(totals.income)}</Text>
-          </View>
-          <View style={s.stat}>
-            <Text style={s.label}>Money out</Text>
-            <Text style={[s.statValue, { color: C.expense }]}>{money(totals.expense)}</Text>
+        <Text style={s.title}>Overview</Text>
+        <Text style={s.subtitle}>{dateLine}</Text>
+
+        <View style={s.hero}>
+          <Text style={s.heroLabel}>Total balance</Text>
+          <Text
+            style={[s.heroBalance, totals.balance < 0 && { color: C.heroExpense }]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+          >
+            {money(totals.balance)}
+          </Text>
+          <View style={s.pills}>
+            <View style={s.pill}>
+              <View style={s.pillTop}>
+                <Ionicons name="arrow-down-circle" size={18} color={C.heroIncome} />
+                <Text style={s.pillLabel}>Money in</Text>
+              </View>
+              <Text
+                style={[s.pillValue, { color: C.heroIncome }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
+                {money(totals.income)}
+              </Text>
+            </View>
+            <View style={s.pill}>
+              <View style={s.pillTop}>
+                <Ionicons name="arrow-up-circle" size={18} color={C.heroExpense} />
+                <Text style={s.pillLabel}>Money out</Text>
+              </View>
+              <Text
+                style={[s.pillValue, { color: C.heroExpense }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
+                {money(totals.expense)}
+              </Text>
+            </View>
           </View>
         </View>
 
         <View style={s.card}>
-          <Text style={s.cardTitle}>{monthName}</Text>
+          <View style={s.cardHead}>
+            <Text style={s.cardTitle}>{monthName}</Text>
+            <Text style={s.cardMeta}>
+              {month.income > 0 ? `${pct}% of income spent` : "No income yet"}
+            </Text>
+          </View>
+          <Text style={[s.saved, saved < 0 && { color: C.expense }]}>{money(saved)}</Text>
+          <Text style={s.cardMeta}>Saved this month</Text>
+          <View style={s.track}>
+            <View style={[s.fill, { width: `${pct}%` as `${number}%` }]} />
+          </View>
           <View style={s.cardRow}>
             <Text style={s.cardLabel}>Money in</Text>
-            <Text style={[s.cardValue, { color: C.income }]}>{money(monthIn)}</Text>
+            <Text style={[s.cardValue, { color: C.income }]}>{money(month.income)}</Text>
           </View>
           <View style={s.cardRow}>
             <Text style={s.cardLabel}>Money out</Text>
-            <Text style={[s.cardValue, { color: C.expense }]}>{money(monthOut)}</Text>
-          </View>
-          <View style={[s.cardRow, s.cardTotal]}>
-            <Text style={s.cardLabel}>Saved this month</Text>
-            <Text style={s.cardValue}>{money(monthIn - monthOut)}</Text>
+            <Text style={[s.cardValue, { color: C.expense }]}>{money(month.expense)}</Text>
           </View>
         </View>
 
         <View style={s.sectionHead}>
-          <Text style={s.label}>Recent</Text>
+          <Text style={s.sectionTitle}>Recent</Text>
           <Pressable onPress={() => router.push("/transactions")} hitSlop={10}>
             <Text style={s.link}>See all</Text>
           </Pressable>
         </View>
 
-        {sorted.length === 0 ? (
+        {recent.length === 0 ? (
           <Text style={s.empty}>
             No entries yet. Open Transactions to add your salary or your first expense.
           </Text>
         ) : (
-          sorted.slice(0, 5).map((item) => (
-            <View key={item.id} style={s.row}>
-              <View style={{ flex: 1 }}>
-                <Text style={s.rowTitle}>{item.title}</Text>
-                <Text style={s.rowDate}>{showDate(entryDate(item))}</Text>
-              </View>
-              <Text
-                style={[
-                  s.rowAmount,
-                  { color: item.type === "income" ? C.income : C.expense },
-                ]}
-              >
-                {item.type === "income" ? "+" : "-"}
-                {money(item.amount)}
-              </Text>
-            </View>
+          recent.map((item) => (
+            <EntryRow
+              key={item.id}
+              item={item}
+              tag={item.tagId ? tagMap.get(item.tagId) : undefined}
+              C={C}
+              money={money}
+            />
           ))
         )}
 
-        <Pressable style={s.primaryBtn} onPress={() => router.push("/transactions")}>
+        <Pressable
+          style={s.primaryBtn}
+          onPress={() => router.push("/transactions")}
+          accessibilityRole="button"
+        >
+          <Ionicons name="add" size={22} color={C.onInk} />
           <Text style={s.primaryText}>Add transaction</Text>
         </Pressable>
       </ScrollView>
@@ -93,57 +142,90 @@ export default function Home() {
   );
 }
 
-const makeStyles = (C: Palette) =>
-  StyleSheet.create({
+const makeStyles = (C: Palette) => {
+  const shadow = {
+    shadowColor: "#101B26",
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  };
+  return StyleSheet.create({
     screen: { flex: 1, backgroundColor: C.bg },
-    label: { fontSize: 13, color: C.muted, fontWeight: "600" },
-    balance: { fontSize: 44, fontWeight: "800", color: C.ink, marginTop: 2 },
-    statsRow: { flexDirection: "row", gap: 24, marginTop: 12 },
-    stat: { flex: 1 },
-    statValue: { fontSize: 20, fontWeight: "700", marginTop: 2 },
-    card: {
-      marginTop: 24,
-      backgroundColor: C.card,
-      borderRadius: 14,
-      padding: 16,
-      gap: 10,
-      borderWidth: 1,
-      borderColor: C.line,
+    title: { fontSize: 30, fontWeight: "800", color: C.ink, letterSpacing: -0.5 },
+    subtitle: { fontSize: 15, color: C.muted, marginTop: 2, marginBottom: 20 },
+    hero: { backgroundColor: C.heroBg, borderRadius: 24, padding: 22, ...shadow },
+    heroLabel: { fontSize: 15, color: C.heroMuted, fontWeight: "600" },
+    heroBalance: {
+      fontSize: 44,
+      fontWeight: "800",
+      color: C.heroText,
+      marginTop: 6,
+      letterSpacing: -1,
+      fontVariant: ["tabular-nums"],
     },
-    cardTitle: { fontSize: 16, fontWeight: "700", color: C.ink },
-    cardRow: { flexDirection: "row", justifyContent: "space-between" },
-    cardTotal: { borderTopWidth: 1, borderTopColor: C.line, paddingTop: 10 },
-    cardLabel: { color: C.muted, fontSize: 15 },
-    cardValue: { fontSize: 15, fontWeight: "700", color: C.ink },
+    pills: { flexDirection: "row", gap: 12, marginTop: 20 },
+    pill: {
+      flex: 1,
+      backgroundColor: "rgba(255,255,255,0.08)",
+      borderRadius: 16,
+      padding: 14,
+      gap: 8,
+    },
+    pillTop: { flexDirection: "row", alignItems: "center", gap: 6 },
+    pillLabel: { fontSize: 14, color: C.heroMuted, fontWeight: "600" },
+    pillValue: { fontSize: 19, fontWeight: "700", fontVariant: ["tabular-nums"] },
+    card: {
+      marginTop: 16,
+      backgroundColor: C.card,
+      borderRadius: 20,
+      padding: 18,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: C.line,
+      ...shadow,
+    },
+    cardHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+    cardTitle: { fontSize: 17, fontWeight: "700", color: C.ink },
+    cardMeta: { fontSize: 14, color: C.muted },
+    saved: {
+      fontSize: 30,
+      fontWeight: "800",
+      color: C.ink,
+      marginTop: 10,
+      letterSpacing: -0.5,
+      fontVariant: ["tabular-nums"],
+    },
+    track: {
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: C.bg,
+      marginTop: 16,
+      overflow: "hidden",
+    },
+    fill: { height: 8, borderRadius: 4, backgroundColor: C.expense },
+    cardRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 12 },
+    cardLabel: { fontSize: 16, color: C.muted },
+    cardValue: { fontSize: 16, fontWeight: "700", fontVariant: ["tabular-nums"] },
     sectionHead: {
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "center",
-      marginTop: 24,
-      marginBottom: 8,
+      marginTop: 28,
+      marginBottom: 12,
     },
-    link: { color: C.ink, fontWeight: "700", fontSize: 13 },
-    row: {
-      flexDirection: "row",
-      alignItems: "center",
-      backgroundColor: C.card,
-      borderRadius: 12,
-      padding: 14,
-      marginBottom: 8,
-      borderWidth: 1,
-      borderColor: C.line,
-      gap: 10,
-    },
-    rowTitle: { fontSize: 16, fontWeight: "600", color: C.ink },
-    rowDate: { fontSize: 12, color: C.muted, marginTop: 2 },
-    rowAmount: { fontSize: 16, fontWeight: "700" },
-    empty: { color: C.muted, textAlign: "center", marginTop: 8, lineHeight: 20 },
+    sectionTitle: { fontSize: 19, fontWeight: "700", color: C.ink },
+    link: { fontSize: 15, fontWeight: "700", color: C.ink },
+    empty: { fontSize: 15, color: C.muted, textAlign: "center", lineHeight: 22 },
     primaryBtn: {
-      marginTop: 16,
+      marginTop: 18,
+      flexDirection: "row",
+      gap: 6,
       backgroundColor: C.ink,
-      paddingVertical: 14,
-      borderRadius: 10,
+      paddingVertical: 16,
+      borderRadius: 16,
       alignItems: "center",
+      justifyContent: "center",
     },
-    primaryText: { color: C.onInk, fontWeight: "700", fontSize: 16 },
+    primaryText: { color: C.onInk, fontWeight: "700", fontSize: 17 },
   });
+};

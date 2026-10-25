@@ -1,128 +1,157 @@
-import { useMemo, useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   KeyboardAvoidingView,
+  ListRenderItem,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import {
-  Entry,
-  Palette,
-  confirmAction,
-  entryDate,
-  isValidDate,
-  notify,
-  showDate,
-  toDateStr,
-  useBudget,
-} from "../../lib/budget";
+import EntryForm from "../../lib/EntryForm";
+import EntryRow from "../../lib/EntryRow";
+import { Entry, Palette, useBudget } from "../../lib/budget";
+
+type Filter = "all" | "income" | "expense";
+const FILTERS: { key: Filter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "income", label: "Income" },
+  { key: "expense", label: "Expenses" },
+];
 
 export default function Transactions() {
-  const { sorted, money, addEntry, updateEntry, deleteEntry, colors: C, isDark } = useBudget();
+  const { sorted, tags, tagMap, money, deleteEntry, colors: C } = useBudget();
   const s = useMemo(() => makeStyles(C), [C]);
-  const [type, setType] = useState<Entry["type"]>("expense");
-  const [title, setTitle] = useState("");
-  const [amount, setAmount] = useState("");
-  const [date, setDate] = useState(toDateStr(new Date()));
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const keyboard = isDark ? "dark" : "light";
+  const [editing, setEditing] = useState<Entry | null>(null);
+  const [nonce, setNonce] = useState(0);
+  const [filter, setFilter] = useState<Filter>("all");
+  // null = all tags, "none" = untagged, otherwise a tag id
+  const [tagFilterRaw, setTagFilter] = useState<string | null>(null);
+  const listRef = useRef<FlatList<Entry>>(null);
 
-  const resetForm = () => {
-    setTitle("");
-    setAmount("");
-    setDate(toDateStr(new Date()));
-    setEditingId(null);
-  };
+  // If the filtered tag was deleted, fall back to all tags
+  const tagFilter =
+    tagFilterRaw && tagFilterRaw !== "none" && !tagMap.has(tagFilterRaw) ? null : tagFilterRaw;
 
-  const save = () => {
-    const value = parseFloat(amount.replace(/,/g, ""));
-    if (!title.trim() || !isFinite(value) || value <= 0 || !isValidDate(date)) {
-      notify("Check your entry", "Add a name, an amount above 0, and a date like 2026-10-24.");
-      return;
+  const data = useMemo(
+    () =>
+      sorted.filter(
+        (e) =>
+          (filter === "all" || e.type === filter) &&
+          (tagFilter === null || (tagFilter === "none" ? !e.tagId : e.tagId === tagFilter))
+      ),
+    [sorted, filter, tagFilter]
+  );
+
+  const visibleTags = useMemo(
+    () => (filter === "all" ? tags : tags.filter((t) => t.kind === filter)),
+    [tags, filter]
+  );
+
+  const changeFilter = (f: Filter) => {
+    setFilter(f);
+    if (tagFilter && tagFilter !== "none" && f !== "all" && tagMap.get(tagFilter)?.kind !== f) {
+      setTagFilter(null);
     }
-    const input = { type, title: title.trim(), amount: value, date };
-    if (editingId) updateEntry(editingId, input);
-    else addEntry(input);
-    resetForm();
   };
 
-  const startEdit = (e: Entry) => {
-    setEditingId(e.id);
-    setType(e.type);
-    setTitle(e.title);
-    setAmount(String(e.amount));
-    setDate(entryDate(e));
-  };
+  const startEdit = useCallback((e: Entry) => {
+    setEditing(e);
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+  }, []);
 
-  const remove = (e: Entry) => {
-    confirmAction("Delete entry", `Delete "${e.title}"?`, "Delete", () => {
-      deleteEntry(e.id);
-      if (editingId === e.id) resetForm();
-    });
-  };
+  // After adding or saving: reset the form
+  const done = useCallback(() => {
+    setEditing(null);
+    setNonce((n) => n + 1);
+  }, []);
+
+  const remove = useCallback(
+    (e: Entry) => {
+      deleteEntry(e);
+      setEditing((cur) => (cur?.id === e.id ? null : cur));
+    },
+    [deleteEntry]
+  );
+
+  const renderItem: ListRenderItem<Entry> = useCallback(
+    ({ item }) => (
+      <EntryRow
+        item={item}
+        tag={item.tagId ? tagMap.get(item.tagId) : undefined}
+        C={C}
+        money={money}
+        onPress={startEdit}
+        onDelete={remove}
+      />
+    ),
+    [C, money, tagMap, startEdit, remove]
+  );
 
   const header = (
     <View>
-      <View style={s.form}>
-        <View style={s.toggle}>
-          {(["expense", "income"] as const).map((t) => (
-            <Pressable
-              key={t}
-              onPress={() => setType(t)}
-              style={[
-                s.toggleBtn,
-                type === t && { backgroundColor: t === "income" ? C.income : C.expense },
-              ]}
-            >
-              <Text style={[s.toggleText, type === t && { color: C.onFill }]}>
-                {t === "income" ? "Income" : "Expense"}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-        <TextInput
-          style={s.input}
-          placeholder={type === "income" ? "Source (e.g. Salary)" : "What for (e.g. Groceries)"}
-          placeholderTextColor={C.muted}
-          keyboardAppearance={keyboard}
-          value={title}
-          onChangeText={setTitle}
-        />
-        <TextInput
-          style={s.input}
-          placeholder="Amount"
-          placeholderTextColor={C.muted}
-          keyboardAppearance={keyboard}
-          keyboardType="decimal-pad"
-          value={amount}
-          onChangeText={setAmount}
-        />
-        <TextInput
-          style={s.input}
-          placeholder="Date (YYYY-MM-DD)"
-          placeholderTextColor={C.muted}
-          keyboardAppearance={keyboard}
-          keyboardType="numbers-and-punctuation"
-          value={date}
-          onChangeText={setDate}
-        />
-        <View style={s.formActions}>
-          <Pressable style={s.primaryBtn} onPress={save}>
-            <Text style={s.primaryText}>{editingId ? "Save changes" : "Add entry"}</Text>
-          </Pressable>
-          {editingId && (
-            <Pressable style={s.ghostBtn} onPress={resetForm}>
-              <Text style={s.ghostText}>Cancel</Text>
-            </Pressable>
-          )}
-        </View>
+      <Text style={s.title}>Transactions</Text>
+      <Text style={s.subtitle}>{editing ? "Editing an entry" : "Add money in or out"}</Text>
+
+      <EntryForm key={editing?.id ?? `new-${nonce}`} editing={editing} onDone={done} />
+
+      <View style={s.sectionHead}>
+        <Text style={s.sectionTitle}>History</Text>
+        <Text style={s.count}>
+          {data.length} {data.length === 1 ? "entry" : "entries"}
+        </Text>
       </View>
-      <Text style={[s.label, { marginTop: 24, marginBottom: 8 }]}>History</Text>
+
+      <View style={s.filters}>
+        {FILTERS.map((f) => {
+          const active = filter === f.key;
+          return (
+            <Pressable
+              key={f.key}
+              onPress={() => changeFilter(f.key)}
+              style={[s.chip, active && s.chipActive]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+            >
+              <Text style={[s.chipText, active && { color: C.onInk }]}>{f.label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {tags.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={s.tagFilters}
+          style={{ marginHorizontal: -20 }}
+        >
+          {[
+            { id: null, label: "All categories", color: undefined },
+            { id: "none", label: "Uncategorized", color: undefined },
+            ...visibleTags.map((t) => ({ id: t.id, label: t.name, color: t.color })),
+          ].map((t) => {
+            const active = tagFilter === t.id;
+            return (
+              <Pressable
+                key={t.id ?? "all"}
+                onPress={() => setTagFilter(t.id)}
+                style={[s.chip, active && s.chipActive]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+              >
+                {t.color && <View style={[s.dot, { backgroundColor: t.color }]} />}
+                <Text style={[s.chipText, active && { color: C.onInk }]}>{t.label}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      )}
     </View>
   );
 
@@ -133,36 +162,28 @@ export default function Transactions() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <FlatList
-          data={sorted}
+          ref={listRef}
+          data={data}
           keyExtractor={(e) => e.id}
+          renderItem={renderItem}
           ListHeaderComponent={header}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
+          keyboardDismissMode="on-drag"
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={9}
+          removeClippedSubviews={Platform.OS === "android"}
+          contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
           ListEmptyComponent={
-            <Text style={s.empty}>
-              No entries yet. Add your salary or your first expense above.
-            </Text>
-          }
-          renderItem={({ item }) => (
-            <Pressable style={s.row} onPress={() => startEdit(item)}>
-              <View style={{ flex: 1 }}>
-                <Text style={s.rowTitle}>{item.title}</Text>
-                <Text style={s.rowDate}>{showDate(entryDate(item))}</Text>
-              </View>
-              <Text
-                style={[
-                  s.rowAmount,
-                  { color: item.type === "income" ? C.income : C.expense },
-                ]}
-              >
-                {item.type === "income" ? "+" : "-"}
-                {money(item.amount)}
+            <View style={s.emptyWrap}>
+              <Ionicons name="receipt-outline" size={40} color={C.muted} />
+              <Text style={s.empty}>
+                {sorted.length > 0
+                  ? "No entries match these filters."
+                  : "No entries yet. Add your salary or your first expense above."}
               </Text>
-              <Pressable onPress={() => remove(item)} hitSlop={10} style={s.deleteBtn}>
-                <Text style={s.deleteText}>Delete</Text>
-              </Pressable>
-            </Pressable>
-          )}
+            </View>
+          }
         />
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -172,53 +193,33 @@ export default function Transactions() {
 const makeStyles = (C: Palette) =>
   StyleSheet.create({
     screen: { flex: 1, backgroundColor: C.bg },
-    label: { fontSize: 13, color: C.muted, fontWeight: "600" },
-    form: {
-      backgroundColor: C.card,
-      borderRadius: 14,
-      padding: 16,
-      gap: 12,
-      borderWidth: 1,
-      borderColor: C.line,
-    },
-    toggle: { flexDirection: "row", backgroundColor: C.bg, borderRadius: 10, padding: 3 },
-    toggleBtn: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: "center" },
-    toggleText: { fontWeight: "700", color: C.ink },
-    input: {
-      borderWidth: 1,
-      borderColor: C.line,
-      borderRadius: 10,
-      paddingHorizontal: 14,
-      paddingVertical: 12,
-      fontSize: 16,
-      color: C.ink,
-    },
-    formActions: { flexDirection: "row", gap: 10 },
-    primaryBtn: {
-      flex: 1,
-      backgroundColor: C.ink,
-      paddingVertical: 14,
-      borderRadius: 10,
+    title: { fontSize: 30, fontWeight: "800", color: C.ink, letterSpacing: -0.5 },
+    subtitle: { fontSize: 15, color: C.muted, marginTop: 2, marginBottom: 20 },
+    sectionHead: {
+      flexDirection: "row",
+      justifyContent: "space-between",
       alignItems: "center",
+      marginTop: 28,
+      marginBottom: 12,
     },
-    primaryText: { color: C.onInk, fontWeight: "700", fontSize: 16 },
-    ghostBtn: { paddingVertical: 14, paddingHorizontal: 18, justifyContent: "center" },
-    ghostText: { color: C.muted, fontWeight: "700" },
-    row: {
+    sectionTitle: { fontSize: 19, fontWeight: "700", color: C.ink },
+    count: { fontSize: 14, color: C.muted },
+    filters: { flexDirection: "row", gap: 8, marginBottom: 10 },
+    tagFilters: { flexDirection: "row", gap: 8, paddingHorizontal: 20, marginBottom: 14 },
+    chip: {
       flexDirection: "row",
       alignItems: "center",
-      backgroundColor: C.card,
-      borderRadius: 12,
-      padding: 14,
-      marginBottom: 8,
+      gap: 6,
+      paddingVertical: 8,
+      paddingHorizontal: 14,
+      borderRadius: 20,
       borderWidth: 1,
       borderColor: C.line,
-      gap: 10,
+      backgroundColor: C.card,
     },
-    rowTitle: { fontSize: 16, fontWeight: "600", color: C.ink },
-    rowDate: { fontSize: 12, color: C.muted, marginTop: 2 },
-    rowAmount: { fontSize: 16, fontWeight: "700" },
-    deleteBtn: { paddingLeft: 6 },
-    deleteText: { color: C.muted, fontSize: 12, fontWeight: "600" },
-    empty: { color: C.muted, textAlign: "center", marginTop: 20, lineHeight: 20 },
+    chipActive: { backgroundColor: C.ink, borderColor: C.ink },
+    chipText: { fontSize: 14, fontWeight: "600", color: C.ink },
+    dot: { width: 10, height: 10, borderRadius: 5 },
+    emptyWrap: { alignItems: "center", gap: 10, paddingVertical: 24 },
+    empty: { fontSize: 15, color: C.muted, textAlign: "center", lineHeight: 22 },
   });
