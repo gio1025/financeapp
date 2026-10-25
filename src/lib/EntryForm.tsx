@@ -1,34 +1,20 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { memo, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { DateField, TimeField } from "./Pickers";
 import {
-    Entry,
-    Palette,
-    entryDate,
-    isValidDate,
-    isValidTime,
-    parseAmount,
-    toDateStr,
-    toTimeStr,
-    useBudget,
+  Entry,
+  Palette,
+  entryDate,
+  parseAmount,
+  toDateStr,
+  toTimeStr,
+  useBudget,
 } from "./budget";
 
 type Props = { editing: Entry | null; onDone: () => void };
-type Errors = { amount?: string; date?: string; time?: string };
-
-// 20261024 -> 2026-10-24 while typing
-const formatDateInput = (t: string) => {
-  const d = t.replace(/\D/g, "").slice(0, 8);
-  if (d.length > 6) return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6)}`;
-  if (d.length > 4) return `${d.slice(0, 4)}-${d.slice(4)}`;
-  return d;
-};
-
-// 1430 -> 14:30 while typing
-const formatTimeInput = (t: string) => {
-  const d = t.replace(/\D/g, "").slice(0, 4);
-  return d.length > 2 ? `${d.slice(0, 2)}:${d.slice(2)}` : d;
-};
+type Errors = { amount?: string };
 
 function EntryForm({ editing, onDone }: Props) {
   const { addEntry, updateEntry, tags, tagMap, symbol, colors: C, isDark } = useBudget();
@@ -48,29 +34,19 @@ function EntryForm({ editing, onDone }: Props) {
   const keyboard = isDark ? "dark" : "light";
   const tagsForType = useMemo(() => tags.filter((t) => t.kind === type), [tags, type]);
 
-  const today = toDateStr(new Date());
-  const y = new Date();
-  y.setDate(y.getDate() - 1);
-  const yesterday = toDateStr(y);
-
-  const clearError = (k: keyof Errors) =>
-    setErrors((e) => (e[k] ? { ...e, [k]: undefined } : e));
-
   const changeType = (t: Entry["type"]) => {
     setType(t);
-    // A tag only belongs to one type
+    // A category only belongs to one type
     if (tagId && tagMap.get(tagId)?.kind !== t) setTagId(undefined);
   };
 
   const save = () => {
-    const next: Errors = {};
     const value = parseAmount(amount);
-    if (!(value > 0)) next.amount = "Enter an amount above 0";
-    if (!isValidDate(date)) next.date = "Use YYYY-MM-DD";
-    if (!isValidTime(time)) next.time = "Use HH:MM";
-    setErrors(next);
-    if (Object.keys(next).length > 0) return;
-
+    if (!(value > 0)) {
+      setErrors({ amount: "Enter an amount above 0" });
+      return;
+    }
+    setErrors({});
     const input = { type, title: title.trim(), amount: value, date, time, tagId };
     if (editing) updateEntry(editing.id, input);
     else addEntry(input);
@@ -112,7 +88,7 @@ function EntryForm({ editing, onDone }: Props) {
             value={amount}
             onChangeText={(t) => {
               setAmount(t.replace(/[^0-9.,]/g, ""));
-              clearError("amount");
+              if (errors.amount) setErrors({});
             }}
           />
         </View>
@@ -137,87 +113,52 @@ function EntryForm({ editing, onDone }: Props) {
 
       <View style={s.field}>
         <Text style={s.fieldLabel}>Category (optional)</Text>
-        {tagsForType.length === 0 ? (
-          <Pressable onPress={() => router.push("/categories")} hitSlop={8}>
-            <Text style={s.linkText}>No {type} categories yet. Add one</Text>
+        {/* One line that scrolls sideways */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
+          contentContainerStyle={s.catContent}
+        >
+          {tagsForType.map((t) => {
+            const active = tagId === t.id;
+            return (
+              <Pressable
+                key={t.id}
+                onPress={() => setTagId(active ? undefined : t.id)}
+                style={[s.chip, active && s.chipActive]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+              >
+                <View style={[s.dot, { backgroundColor: t.color }]} />
+                <Text style={[s.chipText, active && { color: C.onInk }]} numberOfLines={1}>
+                  {t.name}
+                </Text>
+              </Pressable>
+            );
+          })}
+          <Pressable
+            onPress={() => router.push("/categories")}
+            style={[s.chip, s.chipNew]}
+            accessibilityRole="button"
+            accessibilityLabel="Add a category"
+          >
+            <Ionicons name="add" size={16} color={C.muted} />
+            <Text style={s.chipText}>{tagsForType.length === 0 ? "Add category" : "New"}</Text>
           </Pressable>
-        ) : (
-          <View style={s.chips}>
-            {tagsForType.map((t) => {
-              const active = tagId === t.id;
-              return (
-                <Pressable
-                  key={t.id}
-                  onPress={() => setTagId(active ? undefined : t.id)}
-                  style={[s.chip, active && s.chipActive]}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active }}
-                >
-                  <View style={[s.dot, { backgroundColor: t.color }]} />
-                  <Text style={[s.chipText, active && { color: C.onInk }]}>{t.name}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        )}
+        </ScrollView>
       </View>
 
       <View style={s.row2}>
-        <View style={[s.field, { flex: 1.4 }]}>
+        <View style={[s.field, { flex: 1.3 }]}>
           <Text style={s.fieldLabel}>Date</Text>
-          <TextInput
-            style={[s.input, errors.date && s.inputError]}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor={C.muted}
-            keyboardAppearance={keyboard}
-            keyboardType="numbers-and-punctuation"
-            maxLength={10}
-            value={date}
-            onChangeText={(t) => {
-              setDate(formatDateInput(t));
-              clearError("date");
-            }}
-          />
-          {!!errors.date && <Text style={s.errorText}>{errors.date}</Text>}
+          <DateField value={date} onChange={setDate} />
         </View>
         <View style={[s.field, { flex: 1 }]}>
           <Text style={s.fieldLabel}>Time</Text>
-          <TextInput
-            style={[s.input, errors.time && s.inputError]}
-            placeholder="HH:MM"
-            placeholderTextColor={C.muted}
-            keyboardAppearance={keyboard}
-            keyboardType="numbers-and-punctuation"
-            returnKeyType="done"
-            maxLength={5}
-            value={time}
-            onChangeText={(t) => {
-              setTime(formatTimeInput(t));
-              clearError("time");
-            }}
-          />
-          {!!errors.time && <Text style={s.errorText}>{errors.time}</Text>}
+          <TimeField value={time} onChange={setTime} />
         </View>
-      </View>
-
-      <View style={s.chips}>
-        {[
-          { label: "Today", active: date === today, onPress: () => setDate(today) },
-          { label: "Yesterday", active: date === yesterday, onPress: () => setDate(yesterday) },
-          { label: "Now", active: false, onPress: () => setTime(toTimeStr(new Date())) },
-        ].map((c) => (
-          <Pressable
-            key={c.label}
-            onPress={() => {
-              c.onPress();
-              setErrors({});
-            }}
-            style={[s.chip, c.active && s.chipActive]}
-            accessibilityRole="button"
-          >
-            <Text style={[s.chipText, c.active && { color: C.onInk }]}>{c.label}</Text>
-          </Pressable>
-        ))}
       </View>
 
       <View style={s.formActions}>
@@ -273,7 +214,6 @@ const makeStyles = (C: Palette) =>
       height: 52,
       fontSize: 17,
       color: C.ink,
-      fontVariant: ["tabular-nums"],
     },
     inputError: { borderColor: C.expense },
     errorText: { fontSize: 13, color: C.expense, fontWeight: "600" },
@@ -296,6 +236,7 @@ const makeStyles = (C: Palette) =>
       height: 52,
       fontVariant: ["tabular-nums"],
     },
+    catContent: { gap: 8, alignItems: "center", paddingVertical: 2 },
     chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
     chip: {
       flexDirection: "row",
@@ -308,9 +249,9 @@ const makeStyles = (C: Palette) =>
       borderColor: C.line,
     },
     chipActive: { backgroundColor: C.ink, borderColor: C.ink },
+    chipNew: { borderStyle: "dashed", borderColor: C.muted },
     chipText: { fontSize: 14, fontWeight: "600", color: C.ink },
     dot: { width: 10, height: 10, borderRadius: 5 },
-    linkText: { fontSize: 15, fontWeight: "600", color: C.ink, textDecorationLine: "underline" },
     formActions: { flexDirection: "row", gap: 10, marginTop: 4 },
     primaryBtn: {
       flex: 1,

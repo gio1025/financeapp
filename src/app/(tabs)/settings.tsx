@@ -16,12 +16,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import {
   CURRENCIES,
   Palette,
-  ThemeChoice,
   confirmAction,
   confirmChange,
-  useBudget,
+  useBudget
 } from "../../lib/budget";
 import CategoriesRow from "../../lib/CategoriesRow";
+import SecurityCard from "../../lib/SecurityCard";
 
 const THEMES = [
   { key: "system", label: "System", icon: "phone-portrait-outline" },
@@ -64,18 +64,6 @@ export default function Settings() {
     setQuery("");
   };
 
-  const changeTheme = (key: ThemeChoice, label: string) => {
-    if (key === theme) return;
-    confirmChange(
-      "Change appearance?",
-      key === "system"
-        ? "Follow your device's light or dark setting?"
-        : `Switch to ${label.toLowerCase()} mode?`,
-      "Change",
-      () => setTheme(key)
-    );
-  };
-
   const pickCurrency = (code: string) => {
     closePicker();
     if (code === currency) return;
@@ -100,7 +88,7 @@ export default function Settings() {
         contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
       >
         <Text style={s.title}>Settings</Text>
-        <Text style={s.subtitle}>Changes apply right after you confirm</Text>
+        <Text style={s.subtitle}>Appearance applies instantly. Other changes ask first.</Text>
 
         <View style={s.card}>
           <Text style={s.cardTitle}>Appearance</Text>
@@ -110,7 +98,7 @@ export default function Settings() {
               return (
                 <Pressable
                   key={t.key}
-                  onPress={() => changeTheme(t.key, t.label)}
+                  onPress={() => setTheme(t.key)}
                   style={[s.segBtn, active && s.segBtnActive]}
                   accessibilityRole="button"
                   accessibilityState={{ selected: active }}
@@ -143,6 +131,7 @@ export default function Settings() {
         </View>
 
         <CategoriesRow />
+        <SecurityCard />
 
         <View style={s.card}>
           <Text style={s.cardTitle}>Your data</Text>

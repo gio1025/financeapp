@@ -129,7 +129,7 @@ export default function Transactions() {
           showsHorizontalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={s.tagFilters}
-          style={{ marginHorizontal: -20 }}
+          style={{ marginBottom: 14 }}
         >
           {[
             { id: null, label: "All categories", color: undefined },
@@ -205,7 +205,7 @@ const makeStyles = (C: Palette) =>
     sectionTitle: { fontSize: 19, fontWeight: "700", color: C.ink },
     count: { fontSize: 14, color: C.muted },
     filters: { flexDirection: "row", gap: 8, marginBottom: 10 },
-    tagFilters: { flexDirection: "row", gap: 8, paddingHorizontal: 20, marginBottom: 14 },
+    tagFilters: { gap: 8, paddingVertical: 2 },
     chip: {
       flexDirection: "row",
       alignItems: "center",
